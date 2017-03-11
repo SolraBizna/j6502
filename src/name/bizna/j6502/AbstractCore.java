@@ -127,9 +127,6 @@ public abstract class AbstractCore {
 	public State getState() {
 		return state;
 	}
-	public void setState(State state) {
-		this.state = state;
-	}
 	public void setIRQ(boolean irq) {
 		this.irq.set(irq);
 	}
@@ -139,4 +136,12 @@ public abstract class AbstractCore {
 	public void setSO(boolean so) {
 		this.so.set(so);
 	}
+	/* These should only be used for serialization/deserialization purposes! */
+	public void setState(State state) {
+		this.state = state;
+	}
+	public boolean getNMIWasSeen() { return previousNMI; }
+	public boolean getSOWasSeen() { return previousSO; }
+	public void setNMIWasSeen(boolean nu) { previousNMI = nu; }
+	public void setSOWasSeen(boolean nu) { previousSO = nu; }
 }
