@@ -127,6 +127,9 @@ public abstract class AbstractCore {
 	public State getState() {
 		return state;
 	}
+	public void setState(State state) {
+		this.state = state;
+	}
 	public void setIRQ(boolean irq) {
 		this.irq.set(irq);
 	}
