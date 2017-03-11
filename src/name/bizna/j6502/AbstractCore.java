@@ -1,5 +1,7 @@
 package name.bizna.j6502;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 public abstract class AbstractCore {
 	public enum State {
 		RECOVERING_FROM_RESET, RUNNING, AWAITING_INTERRUPT, STOPPED
@@ -19,7 +21,8 @@ public abstract class AbstractCore {
 	protected short pc;
 	protected Memory memory;
 	protected State state;
-	private boolean irq = false, nmi = false, nmi_edge = false, so = false, so_edge = false;
+	private final AtomicBoolean irq = new AtomicBoolean(false), nmi = new AtomicBoolean(false), so = new AtomicBoolean(false);
+	private boolean previousNMI = false, previousSO = false;
 	protected AbstractCore(Memory memory) {
 		this.memory = memory;
 	}
@@ -64,10 +67,11 @@ public abstract class AbstractCore {
 	}
 	public void step() {
 		if(state == null) throw new RuntimeException("You must call reset() at least once on a Core before you can call step() on it");
-		if(so_edge) {
-			so_edge = false;
+		boolean so = this.so.get();
+		if(so != previousSO) {
 			p |= P_V_BIT;
 		}
+		previousSO = so;
 		byte opcode = memory.readOpcodeByte(pc);
 		switch(state) {
 		case STOPPED:
@@ -83,12 +87,12 @@ public abstract class AbstractCore {
 			state = State.RUNNING;
 			break;
 		case AWAITING_INTERRUPT:
-			if(irq || nmi_edge) state = State.RUNNING;
+			if(irq.get() || (nmi.get() && !previousNMI)) state = State.RUNNING;
 			memory.readByte(pc);
 			if(state != State.RUNNING) break;
 		case RUNNING:
-			if(nmi_edge) {
-				nmi_edge = false;
+			boolean nmi = this.nmi.get();
+			if(nmi && !previousNMI) {
 				memory.readByte((short)(pc+1));
 				push((byte)(pc>>8));
 				push((byte)pc);
@@ -97,7 +101,7 @@ public abstract class AbstractCore {
 				pc = memory.readVectorByte(NMI_VECTOR);
 				pc |= memory.readVectorByte((short)(NMI_VECTOR+1))<<8;
 			}
-			else if(irq) {
+			else if(irq.get()) {
 				memory.readByte((short)(pc+1));
 				push((byte)(pc>>8));
 				push((byte)pc);
@@ -111,6 +115,7 @@ public abstract class AbstractCore {
 				++pc;
 				executeOpcode(opcode);
 			}
+			previousNMI = nmi;
 			break;
 		}
 	}
@@ -123,14 +128,12 @@ public abstract class AbstractCore {
 		return state;
 	}
 	public void setIRQ(boolean irq) {
-		this.irq = irq;
+		this.irq.set(irq);
 	}
 	public void setNMI(boolean nmi) {
-		if(nmi && !this.nmi) nmi_edge = true;
-		this.nmi = nmi;
+		this.nmi.set(nmi);
 	}
 	public void setSO(boolean so) {
-		if(so && !this.so) so_edge = true;
-		this.so = so;
+		this.so.set(so);
 	}
 }
