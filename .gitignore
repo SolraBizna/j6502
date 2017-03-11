@@ -1,0 +1,8 @@
+bin/**
+.classpath
+.metadata
+.project
+.settings
+/nbproject/private/
+/build/
+/dist/
