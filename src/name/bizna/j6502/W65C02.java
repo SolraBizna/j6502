@@ -26,6 +26,7 @@ push((byte)(pc>>8));
 push((byte)pc);
 push((byte)(p|P_B_BIT));
 p &= ~P_D_BIT;
+p |= P_I_BIT;
 pc = memory.readVectorByte(IRQ_VECTOR);
 pc |= memory.readVectorByte((short)(IRQ_VECTOR+1))<<8;
     } break;

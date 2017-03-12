@@ -10,13 +10,7 @@ push((byte)(pc>>8));
 push((byte)pc);
 push((byte)(p|P_B_BIT));
 p &= ~P_D_BIT;
-]]
-   if flags.more_compatible_with_6502 then
-      out[[
 p |= P_I_BIT;
-]]
-   end
-   out[[
 pc = memory.readVectorByte(IRQ_VECTOR);
 pc |= memory.readVectorByte((short)(IRQ_VECTOR+1))<<8;
 ]]
