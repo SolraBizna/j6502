@@ -101,7 +101,7 @@ public abstract class AbstractCore {
 				pc = memory.readVectorByte(NMI_VECTOR);
 				pc |= memory.readVectorByte((short)(NMI_VECTOR+1))<<8;
 			}
-			else if(irq.get()) {
+			else if(irq.get() && (p&P_I_BIT) == 0) {
 				memory.readByte((short)(pc+1));
 				push((byte)(pc>>8));
 				push((byte)pc);
