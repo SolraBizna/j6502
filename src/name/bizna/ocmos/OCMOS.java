@@ -121,7 +121,7 @@ public class OCMOS implements Architecture {
 			String key = "Value"+i;
 			NBTTagCompound saved = nbt.getCompoundTag(key);
 			if(saved != null) {
-				
+				MainClass.logger.error("WARNING! Loading a computer that had a serialized Value! Solra doesn't know how to handle this situation! MAN THE LIFEBOATS! WOMEN AND CHILDREN FIRST!");
 			}
 		}
 		nextValueHandle = nbt.getByte("NextValue");
