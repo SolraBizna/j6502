@@ -82,7 +82,7 @@ public abstract class AbstractCore {
 			fakePush();
 			fakePush();
 			p &= ~P_D_BIT;
-			pc = memory.readVectorByte(RESET_VECTOR);
+			pc = (short)(memory.readVectorByte(RESET_VECTOR)&0xFF);
 			pc |= memory.readVectorByte((short)(RESET_VECTOR+1))<<8;
 			state = State.RUNNING;
 			break;
@@ -98,7 +98,7 @@ public abstract class AbstractCore {
 				push((byte)pc);
 				push(p);
 				p &= ~P_D_BIT;
-				pc = memory.readVectorByte(NMI_VECTOR);
+				pc = (short)(memory.readVectorByte(NMI_VECTOR)&0xFF);
 				pc |= memory.readVectorByte((short)(NMI_VECTOR+1))<<8;
 			}
 			else if(irq.get() && (p&P_I_BIT) == 0) {
@@ -108,7 +108,7 @@ public abstract class AbstractCore {
 				push((byte)(p&~P_B_BIT));
 				p &= ~P_D_BIT;
 				p |= P_I_BIT;
-				pc = memory.readVectorByte(IRQ_VECTOR);
+				pc = (short)(memory.readVectorByte(IRQ_VECTOR)&0xFF);
 				pc |= memory.readVectorByte((short)(IRQ_VECTOR+1))<<8;
 			}
 			else {
