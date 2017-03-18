@@ -121,7 +121,25 @@ public class OCMOS implements Architecture {
 			String key = "Value"+i;
 			NBTTagCompound saved = nbt.getCompoundTag(key);
 			if(saved != null) {
-				MainClass.logger.error("WARNING! Loading a computer that had a serialized Value! Solra doesn't know how to handle this situation! MAN THE LIFEBOATS! WOMEN AND CHILDREN FIRST!");
+				try {
+					Class<?> klaso = Class.forName(saved.getString("__class"));
+					Value v = (Value)klaso.newInstance();
+					v.load(saved);
+					valueToHandle.put(v, (byte)i);
+					handleToValue.put((byte)i, v);
+				}
+				catch(ClassNotFoundException e) {
+					MainClass.logger.error("While loading a persisted Value: Couldn't find the class. Is it from a mod that has been removed?");
+				}
+				catch(ClassCastException e) {
+					MainClass.logger.error("While loading a persisted Value: We found the class, but it wasn't a Value");
+				}
+				catch(IllegalAccessException e) {
+					MainClass.logger.error("While loading a persisted Value: We found the class, but it didn't have a public no-arg constructor");
+				}
+				catch(InstantiationException e) {
+					MainClass.logger.error("While loading a persisted Value: We found the class, but it was not constructible");
+				}
 			}
 		}
 		nextValueHandle = nbt.getByte("NextValue");
@@ -144,6 +162,10 @@ public class OCMOS implements Architecture {
 			Value val = pair.getKey();
 			NBTTagCompound saved = new NBTTagCompound();
 			val.save(saved);
+			if(saved.hasKey("__class")) {
+				MainClass.logger.warn("While saving a Value: It already gave itself a __class key, but we're about to override it!");
+				saved.setString("__class", val.getClass().getName());
+			}
 			nbt.setTag("Value"+(pair.getValue()&0xFF), saved);
 		}
 		nbt.setByte("NextValue", nextValueHandle);
