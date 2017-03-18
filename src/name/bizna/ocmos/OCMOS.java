@@ -119,6 +119,7 @@ public class OCMOS implements Architecture {
 		handleToValue.clear();
 		for(int i = 0; i < 256; ++i) {
 			String key = "Value"+i;
+			if(!nbt.hasKey(key)) continue;
 			NBTTagCompound saved = nbt.getCompoundTag(key);
 			if(saved != null) {
 				try {
