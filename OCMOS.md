@@ -314,17 +314,33 @@ BIOS Control Flags
 - Bit 2 (`$04`): 0 = Break to monitor on NMI, 1 = BIOS jumps to `($07)` on NMI
 - Bit 3 (`$08`): 0 = `getb` blocks until a character is available, and presents a blinking cursor as it does. 1 = `getb` returns immediately if no character is available.
 - Bit 4 (`$10`): 0 = BIOS will automatically reinitialize the terminal whenever a `gpu` or `screen` is added or removed. Every time it does so, it will simulate a control-L (`$0C`) keypress. Your code should then check if the terminal is still valid. 1 = BIOS ignores `gpu`/`screen` add/remove signals.
-- Bit 5 (`$20`): 0 = BIOS echoes inputted printable characters to the screen. (Note: Backspace is not printable!) 1 = BIOS never echoes characters.
+- Bit 5 (`$20`): 0 = BIOS echoes inputted printable characters to the screen. (Note: Backspace is not printable!) 1 = BIOS never echoes characters. `echo` still works as normal.
 - Bit 6 (`$40`): 0 = The user may break to the monitor by typing control-backslash. 1 = Control-backslash is handled just like any other keypress.
 - Bit 7 (`$80`): 0 = The user may change the size of the terminal by typing control-T. Every time this occurs, the BIOS simulates a control-L (`$0C`) keypress. 1 = Control-T is handled just like any other keypress.
 
 Entry Points
 ------------
 
+Unless otherwise specified, BIOS routines do not clobber the A, X, or Y registers.
+
 - `($F000)`: `getb`
+- `($F002)`: `echo`
+- `($F004)`: `discard`
 
 ### `getb`
 
 Get <strike>character</strike> byte of text input. If a byte is available, returns it in A and clears V. If it isn't, clobbers A and sets V. (The latter case will only happen if bit 3 of `$0F` is set; otherwise, `getb` waits until a byte is available.)
 
-`getb` will clear the interrupt disable flag, since interrupt handling is necessary to receive input.
+`getb` will clear the interrupt disable flag. Interrupt handling is necessary to receive input.
+
+### `echo`
+
+Echoes the byte in A, exactly as it would be echoed on entry by the BIOS (with BIOS flag 5 disabled).
+
+Please, as with `getb`, bear in mind that bytes with the most significant bit set are part of a multi-byte character!
+
+### `discard`
+
+Discards any buffered input.
+
+`discard` will clear the interrupt disable flag.

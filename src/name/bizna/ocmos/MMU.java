@@ -572,7 +572,7 @@ public class MMU implements Memory {
 		boolean initialized, autoLinebreak, didScrollForLinebreak, didOutputChar;
 		String mappedGPU, mappedScreen;
 		byte curW, curH, maxW, maxH;
-		byte[] codeUnitBuf;
+		byte[] codeUnitBuf = new byte[4];
 		int codeUnitPos;
 		int cursorX, cursorY;
 		String hiddenCharacter;
@@ -614,7 +614,9 @@ public class MMU implements Memory {
 				curW = (byte)DISPLAY_MODES[0].w;
 				curH = (byte)DISPLAY_MODES[0].h;
 				codeUnitPos = 0;
+				hiddenCharacter = null;
 				simpleVoidCall(mappedGPU, "setResolution", curW&0xFF, curH&0xFF);
+				simpleVoidCall(mappedGPU, "fill", 0, 0, curW&0xFF, curH&0xFF, " ");
 				autoLinebreak = true;
 				initialized = true;
 			}
@@ -625,6 +627,7 @@ public class MMU implements Memory {
 				return;
 			}
 			if(hiddenCharacter != null) {
+				if(value == (byte)0xFE) return; // freebie
 				simpleVoidCall(mappedGPU, "set", cursorX, cursorY, hiddenCharacter);
 				hiddenCharacter = null;
 			}
@@ -633,7 +636,7 @@ public class MMU implements Memory {
 			 * if the exact same write is repeated after getting partway through executing, the result will be the same as if it
 			 * hadn't been interrupted.
 			 */
-			switch((int)value) {
+			switch(value&0xFF) {
 			case 0x00:
 				// Reinitialize
 				reinitialize();
@@ -671,10 +674,11 @@ public class MMU implements Memory {
 				cursorX = 1;
 				cursorY = 1;
 				parent.machine.signal("terminal_size", new byte[]{curW, curH, maxW, maxH});
+				simpleVoidCall(mappedGPU, "fill", 0, 0, curW&0xFF, curH&0xFF, ' ');
 				break;
 			case 0x07:
 				// Beep at nemo's favorite frequency
-				parent.machine.beep((short)456, (short)3);
+				parent.machine.beep((short)456, (short)150);
 				break;
 			case 0x08:
 				// Backspace
@@ -738,6 +742,7 @@ public class MMU implements Memory {
 				// cursor blink
 				hiddenCharacter = simpleStringCall(mappedGPU, "get", cursorX, cursorY);
 				simpleVoidCall(mappedGPU, "set", cursorX, cursorY, "▎");
+				if(hiddenCharacter == null) hiddenCharacter = " "; // this is apparently a thing.
 				break;
 			case 0xF8: case 0xF9: case 0xFA: case 0xFB: case 0xFC: case 0xFD: case 0xFF:
 				// do nothing
@@ -748,7 +753,7 @@ public class MMU implements Memory {
 			if(cursorY < (curH&0xFF)) ++cursorY;
 			else {
 				if(!didScrollForLinebreak) {
-					simpleVoidCall(mappedGPU, "copy", 1, 2, curW&0xFF, (curH&0xFF)-1, 1, 1);
+					simpleVoidCall(mappedGPU, "copy", 1, 2, curW&0xFF, (curH&0xFF)-1, 0, -1);
 					didScrollForLinebreak = true;
 				}
 				simpleVoidCall(mappedGPU, "fill", 1, cursorY, curW&0xFF, 1, " ");
@@ -759,9 +764,12 @@ public class MMU implements Memory {
 		/* this has to be written the way it is because the final write (and ONLY the final write) can get interrupted */
 		private void outputCharByte(byte v) throws LimitReachedException {
 			String charToOutput = null;
-			if(codeUnitPos == 0)
+			if(codeUnitPos == 0) {
 				codeUnitBuf[codeUnitPos++] = v;
-			if((codeUnitBuf[0] & 0x80) == 0)
+				if((codeUnitBuf[0] & 0x80) == 0)
+					charToOutput = String.valueOf((char)codeUnitBuf[0]);
+			}
+			else if((codeUnitBuf[0] & 0x80) == 0)
 				charToOutput = String.valueOf((char)codeUnitBuf[0]);
 			else if((codeUnitBuf[0] & 0xE0) == 0xC0) {
 				if(codeUnitPos < 2)
@@ -805,6 +813,7 @@ public class MMU implements Memory {
 				}
 				cursorX = newCursorX;
 				didOutputChar = false;
+				codeUnitPos = 0;
 			}
 		}
 		public void load(NBTTagCompound nbt) {
@@ -826,6 +835,14 @@ public class MMU implements Memory {
 			if(currentMode >= DISPLAY_MODES.length) {
 				MainClass.logger.info("Warning: a saved terminal was set to a mode that is not currently supported");
 				currentMode = DISPLAY_MODES.length-1;
+			}
+			cursorX = nbt.getByte("cursorX") & 0xFF;
+			cursorY = nbt.getByte("cursorY") & 0xFF;
+			if(nbt.hasKey("hiddenCharacter"))
+				hiddenCharacter = nbt.getString("hiddenCharacter");
+			if(nbt.hasKey("codeUnitPos")) {
+				codeUnitPos = nbt.getByte("codeUnitPos");
+				codeUnitBuf = nbt.getByteArray("codeUnitBuf");
 			}
 			initialized = true;
 		}
@@ -854,7 +871,7 @@ public class MMU implements Memory {
 			return nbt;
 		}
 	}
-	protected Terminal terminal;
+	protected Terminal terminal = new Terminal();
 	
 	protected void updateNMI() {
 		parent.cpu.setNMI(naughtyNMI && watchdog == -1);
@@ -1101,7 +1118,7 @@ public class MMU implements Memory {
 			addr &= 0x0FFF;
 			if(addr < 0x200) {
 				--cycleBudget;
-				return builtInMemory[addr];
+				return builtInMemory[addr&0x1FF];
 			}
 			else if(addr < 0x240) {
 				--cycleBudget;
@@ -1169,7 +1186,14 @@ public class MMU implements Memory {
 						}
 						else return componentList[currentComponentInList][currentPositionInComponent++];
 					case 0x247: return (byte)(debugLineStream == null ? 0 : -1);
+					case 0x2FF: return terminal.read();
+					case 0x287:
+						// unreachable hack to inform javac that yes, we can, in fact, have a NoSuchMethodException in this block
+						throw new NoSuchMethodException();
 					}
+				}
+				catch(NoSuchMethodException e) {
+					return -1;
 				}
 				catch(LimitReachedException e) {
 					throw new EscapeRetry(lastFetchedOpcodeAddress);
@@ -1314,7 +1338,7 @@ public class MMU implements Memory {
 						value = (byte)(value & ~FLAG_USER_MODE | (builtInMemory[0] & FLAG_USER_MODE));
 					}
 				}
-				builtInMemory[addr] = value;
+				builtInMemory[addr&0x1FF] = value;
 				--cycleBudget;
 				return;
 			}
@@ -1412,7 +1436,16 @@ public class MMU implements Memory {
 							}
 						}
 						break;
+					case 0x2FF:
+						terminal.write(value);
+						break;
+					case 0x287:
+						// unreachable hack to inform javac that yes, we can, in fact, have a NoSuchMethodException in this block
+						throw new NoSuchMethodException();
 					}
+				}
+				catch(NoSuchMethodException e) {
+					// do nothing
 				}
 				catch(LimitReachedException e) {
 					throw new EscapeRetry(lastFetchedOpcodeAddress);
