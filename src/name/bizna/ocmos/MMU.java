@@ -887,8 +887,8 @@ public class MMU implements Memory {
 				while(src[CABE_PREFIX_PART_1.length + shimLength] == '=') ++shimLength;
 				if(arrayMatch(src, CABE_PREFIX_PART_2, CABE_PREFIX_PART_1.length + shimLength)) {
 					int start = CABE_PREFIX_PART_1.length + shimLength + CABE_PREFIX_PART_2.length;
-					int end = -1;
-					for(int n = start; n < src.length - 2 - shimLength; ++n) {
+					int end = Math.min(ROM_SIZE, src.length);
+					for(int n = start; n < end - 2 - shimLength; ++n) {
 						if(src[n] == ']' && src[n+1+shimLength] == ']') {
 							boolean shimPresent = true;
 							for(int m = n + 1; m < n + 1 + shimLength; ++m) {
@@ -909,9 +909,12 @@ public class MMU implements Memory {
 						for(int n = 0; n < length; ++n) {
 							romArray[n] = src[n+start];
 						}
-						/* copy the interrupt vectors to the end of the array */
-						for(int offset = 1; offset <= 6; ++offset) {
-							romArray[ROM_SIZE-offset] = romArray[length-offset];
+						if(length > 6 && length < ROM_SIZE) {
+							/* copy the interrupt vectors to the end of the array */
+							for(int offset = 1; offset <= 6; ++offset) {
+								romArray[ROM_SIZE-offset] = romArray[length-offset];
+								romArray[length-offset] = -1;
+							}
 						}
 					}
 				}
@@ -921,9 +924,12 @@ public class MMU implements Memory {
 				for(int n = 0; n < length; ++n) {
 					romArray[n] = src[n];
 				}
-				/* copy the interrupt vectors to the end of the array */
-				for(int offset = 1; offset <= 6; ++offset) {
-					romArray[ROM_SIZE-offset] = src[src.length-offset];
+				if(length > 6 && length < ROM_SIZE) {
+					/* copy the interrupt vectors to the end of the array */
+					for(int offset = 1; offset <= 6; ++offset) {
+						romArray[length-offset] = -1;
+						romArray[ROM_SIZE-offset] = src[src.length-offset];
+					}
 				}
 			}
 		}
