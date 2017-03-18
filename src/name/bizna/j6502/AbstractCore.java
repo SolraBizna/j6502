@@ -82,6 +82,7 @@ public abstract class AbstractCore {
 			fakePush();
 			fakePush();
 			p &= ~P_D_BIT;
+			p |= P_I_BIT;
 			pc = (short)(memory.readVectorByte(RESET_VECTOR)&0xFF);
 			pc |= memory.readVectorByte((short)(RESET_VECTOR+1))<<8;
 			state = State.RUNNING;
