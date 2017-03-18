@@ -1461,6 +1461,7 @@ public class MMU implements Memory {
 	}
 	
 	public void remapMemory() {
+		romMappingValid = false;
 		int newMemoryAmount = numMappedRamBanks * BANK_SIZE;
 		if(ramArray == null || newMemoryAmount > ramArray.length) {
 			if(ramArray == null)
@@ -1658,6 +1659,10 @@ public class MMU implements Memory {
 	}
 	
 	protected byte[] massageSignal(Signal sig) {
+		if((sig.name().equals("component_removed") || sig.name().equals("component_added"))
+				&& sig.args().length > 2 && sig.args()[1].equals("eeprom")) {
+			romMappingValid = false;
+		}
 		try {
 			ByteArrayOutputStream retStream = new ByteArrayOutputStream();
 			DataOutputStream dataStream = new DataOutputStream(retStream);
