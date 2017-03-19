@@ -558,9 +558,12 @@ a = data;
 memory.readByte(pc);
     } break;
     case (byte)60: {
-// absolute
-short ea = (short)(memory.readByte(pc)&0xFF);
-ea |= memory.readByte((short)(pc+1)) << 8;
+// absolute_x
+short base = (short)(memory.readByte(pc)&0xFF);
+base |= memory.readByte((short)(pc+1)) << 8;
+short ea = (short)(base + (x&0xFF));
+memory.readByte((short)(pc+1));
+if((ea>>8) != (base>>8)) memory.readByte((short)((ea&0x00FF)|(base&0xFF00)));
 pc = (short)(pc + 2);
 byte data = memory.readByte(ea);
 p = (byte)((p&0x3F)|(data&0xC0));

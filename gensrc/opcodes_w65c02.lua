@@ -59,7 +59,7 @@ return {
 [0x39]={instructions.AND, addressing_modes.absolute_y},
 [0x3A]={instructions.DEC, addressing_modes.implied_a},
 [0x3B]={instructions.NOP, addressing_modes.implied},
-[0x3C]={instructions.BIT, addressing_modes.absolute},
+[0x3C]={instructions.BIT, addressing_modes.absolute_x},
 [0x3D]={instructions.AND, addressing_modes.absolute_x},
 [0x3E]={instructions.ROL, addressing_modes.absolute_x},
 [0x3F]={instructions.BBR, addressing_modes.relative_bit_branch, 3},
