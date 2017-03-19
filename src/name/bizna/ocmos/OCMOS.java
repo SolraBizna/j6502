@@ -70,7 +70,7 @@ public class OCMOS implements Architecture {
 	@Override
 	public ExecutionResult runThreaded(boolean isSynchronizedReturn) {
 		try {
-			long thisRunTime = machine.worldTime();
+			long thisRunTime = machine.worldTime(); // TODO: this doesn't work quite right in worlds with frozen time
 			int cyclesToRun;
 			if(lastYieldWasSleep) cyclesToRun = cpuCyclesPerTick;
 			else if(thisRunTime < lastRunTime) {

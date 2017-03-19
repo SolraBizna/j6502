@@ -173,6 +173,8 @@ public class MMU implements Memory {
 							if(MainClass.instance.shouldLogUIFErrors()) MainClass.logger.error("Invalid Value handle written");
 							outputState = UIFOutputState.MALFORMED;
 						}
+						else
+							outputState = UIFOutputState.AWAITING_TAG_FIRST_BYTE;
 					}
 					else {
 						if(MainClass.instance.shouldLogUIFErrors()) MainClass.logger.error("Invalid UIF tag written");
@@ -266,8 +268,12 @@ public class MMU implements Memory {
 										throw new EscapeRetry(lastFetchedOpcodeAddress);
 									}
 									else {
+										if(MainClass.instance.shouldLogInvokes())
+											MainClass.logger.info("Invoke: %s %s %s", addr, command, Arrays.toString(params));
 										Object[] reply = parent.machine.invoke(addr, command, params);
 										if(reply == null) reply = new Object[0];
+										if(MainClass.instance.shouldLogInvokes())
+											MainClass.logger.info(" -> %s", Arrays.toString(reply));
 										ret = 0x00;
 										outstream.reset();
 										DataOutputStream dataout = new DataOutputStream(outstream);
@@ -296,8 +302,12 @@ public class MMU implements Memory {
 										needSynchronizedCall = true;
 										throw new EscapeRetry(lastFetchedOpcodeAddress);
 									}
+									if(MainClass.instance.shouldLogInvokes())
+										MainClass.logger.info("Invoke: %s %s %s", value, command, Arrays.toString(params));
 									Object[] reply = parent.machine.invoke(value, command, params);
 									if(reply == null) reply = new Object[0];
+									if(MainClass.instance.shouldLogInvokes())
+										MainClass.logger.info(" -> %s", Arrays.toString(reply));
 									ret = 0x00;
 									outstream.reset();
 									DataOutputStream dataout = new DataOutputStream(outstream);
@@ -349,7 +359,8 @@ public class MMU implements Memory {
 						ret = 0x7F;
 					else {
 						ret = 0x7E;
-						if(MainClass.instance.shouldLogUIFErrors()) MainClass.logger.warn("UIF message was not complete");
+						if(outputState != UIFOutputState.MALFORMED && MainClass.instance.shouldLogUIFErrors())
+							MainClass.logger.warn("UIF message was not complete");
 					}
 					outputState = null;
 					outstream.reset();
@@ -414,7 +425,7 @@ public class MMU implements Memory {
 		private byte[] sectorBuffer;
 		private int sectorReadPos = -1;
 		private int sectorWritePos = -1;
-		public byte read(int a) {
+		public byte read(int a) throws LimitReachedException {
 			switch(a) {
 			case 0: return addr1;
 			case 1: return addr2;
@@ -436,6 +447,8 @@ public class MMU implements Memory {
 						throw new EscapeRetry(lastFetchedOpcodeAddress);
 					}
 					try {
+						if(MainClass.instance.shouldLogInvokes())
+							MainClass.logger.info("Reading drive %s sector %d", mappedDrive, (sector1&0xFF)|((sector2&0xFF)<<8));
 						sectorBuffer = simpleByteArrayCall(mappedDrive, "readSector", (sector1&0xFF)|((sector2&0xFF)<<8));
 						if(sectorBuffer == null) {
 							triggerOverflow();
@@ -458,7 +471,7 @@ public class MMU implements Memory {
 			default: return -1;
 			}
 		}
-		public void write(int a, byte value) {
+		public void write(int a, byte value) throws LimitReachedException {
 			switch(a) {
 			case 0: addr1 = value; rescan(); break;
 			case 1: addr2 = value; rescan(); break;
@@ -467,7 +480,7 @@ public class MMU implements Memory {
 					sectorReadPos = -1;
 					sectorBuffer = null;
 				}
-				if(sectorSize == 0 || (sectorBuffer != null && sectorWritePos > sectorBuffer.length)
+				if(sectorSize == 0 || (sectorBuffer != null && sectorWritePos >= sectorBuffer.length)
 				|| (sectorBuffer == null && sectorWritePos >= 0)
 				|| sector2 > numSectors2 || (sector2 == numSectors2 && sector1 >= numSectors1)
 				|| mappedDrive == null) {
@@ -475,18 +488,17 @@ public class MMU implements Memory {
 					break;
 				}
 				if(sectorWritePos == -1) {
-					sectorBuffer = new byte[sectorSize<<8];
+					sectorBuffer = new byte[(sectorSize&0xFF)<<8];
 					sectorWritePos = 0;
 				}
-				if(sectorWritePos == sectorBuffer.length && !inSynchronizedCall)
+				if(sectorWritePos == sectorBuffer.length-1 && !inSynchronizedCall) {
+					needSynchronizedCall = true;
 					throw new EscapeRetry(lastFetchedOpcodeAddress);
+				}
 				sectorBuffer[sectorWritePos++] = value;
 				if(sectorWritePos == sectorBuffer.length) {
-					if(!inSynchronizedCall) {
-						needSynchronizedCall = true;
-						throw new EscapeRetry(lastFetchedOpcodeAddress);
-					}
 					try {
+						MainClass.logger.info("Writing drive %s sector %d", mappedDrive, (sector1&0xFF)|((sector2&0xFF)<<8));
 						simpleVoidCall(mappedDrive, "writeSector", (sector1&0xFF)|((sector2&0xFF)<<8), sectorBuffer);
 						sectorBuffer = null;
 					}
@@ -502,7 +514,7 @@ public class MMU implements Memory {
 			default: break;
 			}
 		}
-		private void rescan() {
+		private void rescan() throws LimitReachedException {
 			mappedDrive = null;
 			String startsWith = String.format("%02x%02x", addr1&0xFF, addr2&0xFF);
 			Map<String,String> components = parent.machine.components();
@@ -513,6 +525,24 @@ public class MMU implements Memory {
 						break;
 					}
 				}
+			}
+			if(mappedDrive != null) {
+				int sectorSize = simpleIntCall(mappedDrive, "getSectorSize");
+				if((sectorSize & 255) != 0) {
+					MainClass.logger.warn("Mapped drive %s, but it has a sector size that is not a multiple of 256. This drive cannot be used.");
+					mappedDrive = null;
+					return;
+				}
+				else if(sectorSize >= 65536) {
+					MainClass.logger.warn("Mapped drive %s, but it has a sector size that is absurdly large. This drive cannot be used.");
+					mappedDrive = null;
+					return;
+				}
+				this.sectorSize = (byte)(sectorSize >> 8);
+				int numSectors = simpleIntCall(mappedDrive, "getCapacity") / sectorSize;
+				if(numSectors > 65535) numSectors = 65535;
+				numSectors1 = (byte)(numSectors);
+				numSectors2 = (byte)(numSectors>>8);
 			}
 		}
 		public void load(NBTTagCompound nbt) {
@@ -569,12 +599,14 @@ public class MMU implements Memory {
 	};
 
 	protected class Terminal {
+		private static final byte BEEP_COOLDOWN_LENGTH = 3;
 		boolean initialized, autoLinebreak, didScrollForLinebreak, didOutputChar;
 		String mappedGPU, mappedScreen;
 		byte curW, curH, maxW, maxH;
 		byte[] codeUnitBuf = new byte[4];
 		int codeUnitPos;
 		int cursorX, cursorY;
+		byte beepCooldown;
 		String hiddenCharacter;
 		int currentMode;
 		public byte read() {
@@ -616,7 +648,7 @@ public class MMU implements Memory {
 				codeUnitPos = 0;
 				hiddenCharacter = null;
 				simpleVoidCall(mappedGPU, "setResolution", curW&0xFF, curH&0xFF);
-				simpleVoidCall(mappedGPU, "fill", 0, 0, curW&0xFF, curH&0xFF, " ");
+				simpleVoidCall(mappedGPU, "fill", 1, 1, curW&0xFF, curH&0xFF, " ");
 				autoLinebreak = true;
 				initialized = true;
 			}
@@ -647,7 +679,7 @@ public class MMU implements Memory {
 				break;
 			case 0x04:
 				// Clear screen
-				simpleVoidCall(mappedGPU, "fill", 0, 0, curW&0xFF, curH&0xFF, ' ');
+				simpleVoidCall(mappedGPU, "fill", 1, 1, curW&0xFF, curH&0xFF, " ");
 				cursorX = 1;
 				cursorY = 1;
 				break;
@@ -661,7 +693,7 @@ public class MMU implements Memory {
 					needSynchronizedCall = true;
 					throw new EscapeRetry(lastFetchedOpcodeAddress);
 				}
-				simpleVoidCall(mappedGPU, "fill", 0, 0, curW&0xFF, curH&0xFF, ' ');
+				simpleVoidCall(mappedGPU, "fill", 1, 1, curW&0xFF, curH&0xFF, " ");
 				int newMode = currentMode;
 				do {
 					newMode = (newMode + 1) % DISPLAY_MODES.length;
@@ -674,11 +706,13 @@ public class MMU implements Memory {
 				cursorX = 1;
 				cursorY = 1;
 				parent.machine.signal("terminal_size", new byte[]{curW, curH, maxW, maxH});
-				simpleVoidCall(mappedGPU, "fill", 0, 0, curW&0xFF, curH&0xFF, ' ');
 				break;
 			case 0x07:
-				// Beep at nemo's favorite frequency
-				parent.machine.beep((short)456, (short)150);
+				if(beepCooldown == 0) {
+					// Beep at nemo's favorite frequency
+					parent.machine.beep((short)456, (short)150);
+					beepCooldown = BEEP_COOLDOWN_LENGTH;
+				}
 				break;
 			case 0x08:
 				// Backspace
@@ -844,6 +878,8 @@ public class MMU implements Memory {
 				codeUnitPos = nbt.getByte("codeUnitPos");
 				codeUnitBuf = nbt.getByteArray("codeUnitBuf");
 			}
+			if(nbt.hasKey("beepCooldown"))
+				beepCooldown = nbt.getByte("beepCooldown");
 			initialized = true;
 		}
 		public NBTTagCompound save() {
@@ -868,13 +904,18 @@ public class MMU implements Memory {
 			nbt.setByte("cursorY", (byte)cursorY);
 			if(hiddenCharacter != null)
 				nbt.setString("hiddenCharacter", hiddenCharacter);
+			if(beepCooldown != 0)
+				nbt.setByte("beepCooldown", beepCooldown);
 			return nbt;
+		}
+		public void coolIt() {
+			if(beepCooldown > 0) beepCooldown = 0;
 		}
 	}
 	protected Terminal terminal = new Terminal();
 	
 	protected void updateNMI() {
-		parent.cpu.setNMI(naughtyNMI && watchdog == -1);
+		parent.cpu.setNMI(naughtyNMI || watchdog == -1);
 	}
 	
 	public MMU(OCMOS parent) {
@@ -1034,11 +1075,27 @@ public class MMU implements Memory {
 		}
 	}
 	
-	private byte simpleNumberCall(String addr, String commandName, Object... args) throws LimitReachedException {
+	private byte simpleByteCall(String addr, String commandName, Object... args) throws LimitReachedException {
 		try {
 			Object[] result = parent.machine.invoke(addr, commandName, args);
 			if(result != null && result.length > 0 && result[0] instanceof Number)
 				return ((Number)result[0]).byteValue();
+			else return -1;
+		}
+		catch(LimitReachedException e) {
+			throw e;
+		}
+		catch(Exception e) {
+			MainClass.logger.warn("Unexpected exception during simpleNumberCall", e);
+			return -1;
+		}
+	}
+
+	private int simpleIntCall(String addr, String commandName, Object... args) throws LimitReachedException {
+		try {
+			Object[] result = parent.machine.invoke(addr, commandName, args);
+			if(result != null && result.length > 0 && result[0] instanceof Number)
+				return ((Number)result[0]).intValue();
 			else return -1;
 		}
 		catch(LimitReachedException e) {
@@ -1130,22 +1187,22 @@ public class MMU implements Memory {
 					if(addr >= 0x280 && addr <= 0x2F5) {
 						switch(addr) {
 						case 0x280:
-							return simpleNumberCall(mappedRedstoneAddr, "getWakeThreshold");
+							return simpleByteCall(mappedRedstoneAddr, "getWakeThreshold");
 						case 0x2F4:
-							return simpleNumberCall(mappedRedstoneAddr, "getWirelessInput");
+							return simpleByteCall(mappedRedstoneAddr, "getWirelessInput");
 						case 0x2F5:
-							return simpleNumberCall(mappedRedstoneAddr, "getWirelessOutput");
+							return simpleByteCall(mappedRedstoneAddr, "getWirelessOutput");
 						default:
 							int side = addr%6;
 							int wat = addr/6-1;
 							if(wat == -1)
-								return simpleNumberCall(mappedRedstoneAddr, "getComparatorInput", side);
+								return simpleByteCall(mappedRedstoneAddr, "getComparatorInput", side);
 							boolean isOutput = (wat&1) != 0;
 							int color = wat/2-1;
 							if(color == -1)
-								return simpleNumberCall(mappedRedstoneAddr, isOutput ? "getOutput" : "getInput", side);
+								return simpleByteCall(mappedRedstoneAddr, isOutput ? "getOutput" : "getInput", side);
 							else
-								return simpleNumberCall(mappedRedstoneAddr, isOutput ? "getBundledOutput" : "getBundledInput", side, color);
+								return simpleByteCall(mappedRedstoneAddr, isOutput ? "getBundledOutput" : "getBundledInput", side, color);
 						}
 					}
 					else if(addr >= 0x260 && addr <= 0x27F) {
@@ -1196,6 +1253,7 @@ public class MMU implements Memory {
 					return -1;
 				}
 				catch(LimitReachedException e) {
+					executionResult = new ExecutionResult.Sleep(1);
 					throw new EscapeRetry(lastFetchedOpcodeAddress);
 				}
 			}
@@ -1230,11 +1288,11 @@ public class MMU implements Memory {
 			debugLineStream = MainClass.instance.shouldAllowDebugDevice() ? new ByteArrayOutputStream() : null;
 			for(byte bank = 0; bank < 16; ++bank) {
 				if(bank != 0) {
-					builtInMemory[MMU_REG_SUPERVISOR_BANKS_LOW + bank] = bank;
-					builtInMemory[MMU_REG_SUPERVISOR_BANKS_HIGH + bank] = 0;
+					mmuRegisters[MMU_REG_SUPERVISOR_BANKS_LOW + bank] = bank;
+					mmuRegisters[MMU_REG_SUPERVISOR_BANKS_HIGH + bank] = 0;
 				}
-				builtInMemory[MMU_REG_USER_BANKS_LOW + bank] = bank;
-				builtInMemory[MMU_REG_USER_BANKS_HIGH + bank] = 0;
+				mmuRegisters[MMU_REG_USER_BANKS_LOW + bank] = bank;
+				mmuRegisters[MMU_REG_USER_BANKS_HIGH + bank] = 0;
 			}
 			reloadComponentList();
 			break;
@@ -1322,7 +1380,6 @@ public class MMU implements Memory {
 		else
 			bank = (mmuRegisters[MMU_REG_SUPERVISOR_BANKS_LOW + segment]&0xFF)|((mmuRegisters[MMU_REG_SUPERVISOR_BANKS_HIGH + segment]&0xFF)<<8);
 		if(fakePushStage > 0 && ((addr&0xFFFF)<0x200)) {
-			MainClass.logger.info("Fake push");
 			switch(fakePushStage--) {
 			case 3: value = (byte)(fakePushAddress>>>8); break;
 			case 2: value = (byte)(fakePushAddress&0xFF); break;
@@ -1448,6 +1505,7 @@ public class MMU implements Memory {
 					// do nothing
 				}
 				catch(LimitReachedException e) {
+					executionResult = new ExecutionResult.Sleep(1);
 					throw new EscapeRetry(lastFetchedOpcodeAddress);
 				}
 			}
@@ -1574,7 +1632,7 @@ public class MMU implements Memory {
 			throw new RuntimeException(e);
 		}
 		if(nbt.hasKey("watchdog"))
-			nbt.setByte("watchdog", watchdog);
+			watchdog = nbt.getByte("watchdog");
 		else
 			watchdog = 0;
 		if(nbt.hasKey("currentPositionInComponent")) {
@@ -1687,8 +1745,11 @@ public class MMU implements Memory {
 	protected void tryPopSignal() {
 		assert(bufferedSignal == null);
 		Signal newSignal = parent.machine.popSignal();
-		if(newSignal != null)
+		if(newSignal != null) {
+			if(MainClass.instance.shouldLogInvokes())
+				MainClass.logger.info("Signal: %s %s", newSignal.name(), Arrays.toString(newSignal.args()));
 			bufferedSignal = massageSignal(newSignal);
+		}
 	}
 	
 	protected byte[] massageSignal(Signal sig) {
@@ -1785,6 +1846,7 @@ public class MMU implements Memory {
 	}
 	
 	public void countDownWatchdog() {
+		terminal.coolIt();
 		if(watchdog != 0 && watchdog != -1) ++watchdog;
 		updateNMI();
 	}

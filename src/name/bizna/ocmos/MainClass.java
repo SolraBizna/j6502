@@ -22,7 +22,7 @@ import net.minecraftforge.common.config.Property;
 public class MainClass {
 	public static final String MODID = "OCMOS";
 	public static final String NAME = "OpenComputers 65C02 (OCMOS)";
-	public static final String VERSION = "0.4";
+	public static final String VERSION = "0.5";
 	static Logger logger = LogManager.getFormatterLogger("OCMOS");
 	@Instance(value=MainClass.MODID)
 	public static MainClass instance;
@@ -34,7 +34,7 @@ public class MainClass {
 	public static final int[] defaultRamTier3Latency = new int[]{1, 1, 1};
 	public static final int[] defaultRomLatency = new int[]{1, 2, 4};
 	public static final int[] defaultIoLatency = new int[]{1, 2, 4};
-	public static final boolean defaultAllowDebugDevice = false, defaultLogUIFErrors = false;
+	public static final boolean defaultAllowDebugDevice = false, defaultLogUIFErrors = false, defaultLogInvokes = false;
 	public static final int defaultMaxInvokeSize = 16384;
 	/* and their associated variables */
 	private static int banksPerMebibyte;
@@ -44,7 +44,7 @@ public class MainClass {
 	private static int[] ramTier3Latency;
 	private static int[] romLatency;
 	private static int[] ioLatency;
-	private static boolean allowDebugDevice, logUIFErrors;
+	private static boolean allowDebugDevice, logUIFErrors, logInvokes;
 	private static int maxInvokeSize;
 	/**
 	 * @return The number of cycles that a CPU at a given tier can execute in one Minecraft tick.
@@ -96,11 +96,15 @@ public class MainClass {
 	private void readConfig(FMLPreInitializationEvent event) {
 		Configuration cfg = new Configuration(event.getSuggestedConfigurationFile());
 		allowDebugDevice = cfg.getBoolean("allowDebugDevice", Configuration.CATEGORY_GENERAL, defaultAllowDebugDevice,
-				"Whether to make the debugging device available.\nThis writes to the Minecraft log under computer control; you should\ndisable this unless you're debugging something that you can't debug any other way.\nDoes not provide input, only output.\n");
+				"Whether to make the debugging device available.\nThis writes to the Minecraft log under computer control; you should\ndisable this unless you're debugging something that you can't debug any\nother way.\nDoes not provide input, only output.\n");
 		logUIFErrors = cfg.getBoolean("logUIFErrors", Configuration.CATEGORY_GENERAL, defaultLogUIFErrors,
-				"Whether to log the reason for rejecting invalid UIF transmissions.\nThis writes to the Minecraft log under (partial) computer control; you should\ndisable this unless you're debugging something that you can't debug\nany other way.\n");
+				"Whether to log the reason for rejecting invalid UIF transmissions.\nThis writes to the Minecraft log under (partial) computer control; you\nshould disable this unless you're debugging something that you can't\ndebug any other way.\n");
+		logInvokes = cfg.getBoolean("logInvokes", Configuration.CATEGORY_GENERAL, defaultLogInvokes,
+				"Log ALL invokes, replies, and signals to the Minecraft log!\nYou should pretty seriously consider never enabling this.\n");
 		maxInvokeSize = cfg.getInt("maxInvokeSize", Configuration.CATEGORY_GENERAL, defaultMaxInvokeSize, 128, 1<<30,
-				"The maximum size, in bytes, an outgoing command can take. The higher you set this option, the more memory a malicious program can consume.\n");
+				"The maximum size, in bytes, an outgoing command can take. The higher you\nset this option, the more memory a malicious program can consume.\n");
+		banksPerMebibyte = cfg.getInt("banksPerMebibyte", Configuration.CATEGORY_GENERAL, defaultBanksPerMebibyte, 1, 1<<30,
+				"The number of 4096-byte banks a RAM module provides, per mebibyte of\nmemory it would provide a Lua computer.\n65C02 computers require MUCH less memory to perform a task than Lua\ncomputers do. The default attempts to provide a comfortable amount of\nmemory, without making large memory modules pointless.\n");
 		cpuCyclesPerTick = getTierBasedIntList(cfg, "cpuCyclesPerTick", Configuration.CATEGORY_GENERAL, defaultCpuCyclesPerTick,
 				"CPU cycles per Minecraft tick, at each CPU tier.\nDefault values are 25000, 50000, 100000 (500KHz/1MHz/2MHz)");
 		ramTier1Latency = getTierBasedIntList(cfg, "ramTier1Latency", Configuration.CATEGORY_GENERAL, defaultRamTier1Latency,
@@ -121,7 +125,7 @@ public class MainClass {
 			if(romLatency[n] < 1) romLatency[n] = 1;
 			if(ioLatency[n] < 1) ioLatency[n] = 1;
 		}
-		cfg.getCategory(Configuration.CATEGORY_GENERAL).setPropertyOrder(new ArrayList<String>(Arrays.asList("cpuCyclesPerTick","romLatency","ramTier1Latency","ramTier2Latency","ramTier3Latency","ioLatency","allowDebugDevice","logUIFErrors","maxInvokeSize")));
+		cfg.getCategory(Configuration.CATEGORY_GENERAL).setPropertyOrder(new ArrayList<String>(Arrays.asList("cpuCyclesPerTick","banksPerMebibyte","romLatency","ramTier1Latency","ramTier2Latency","ramTier3Latency","ioLatency","allowDebugDevice","logUIFErrors","logInvokes","maxInvokeSize")));
 		cfg.save();
 	}
 	@EventHandler
@@ -141,6 +145,9 @@ public class MainClass {
 	}
 	boolean shouldLogUIFErrors() {
 		return logUIFErrors;
+	}
+	boolean shouldLogInvokes() {
+		return logInvokes;
 	}
 	int getMaxInvokeSize() {
 		return maxInvokeSize;

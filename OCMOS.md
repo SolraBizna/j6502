@@ -191,7 +191,7 @@ There are four Disk Drive slots, each 8 bytes long. At reset, no drive is mapped
 - `$2`: (R) The sector size of this drive, in units of 256 bytes. Zero means no drive here.
 - `$3`: Read/write port. Sets V if a read/write overflows, or if a read/write is attempted on a drive that doesn't exist [anymore], or if a read/write is performed on an out-of-range sector.
 - `$4,$5`: (R) The number of sectors on this drive. All zeroes means no drive here.
-- `$6,$7`: (RW) Sector number of current read/write, little-endian.
+- `$6,$7`: (RW) Sector number of current read/write. Be aware that sector numbers start at 1.
 
 Reading aborts a write, and writing aborts a read. A write does not finish until the moment you write the last byte of a sector.
 
@@ -262,16 +262,12 @@ General-purpose BIOS bootloaders shall be [OETF #1: Cross-Architecture Booting](
   - Check sector 0 for a CAB boot sector. If it doesn't have one, check sector 1.
   - If a CAB boot sector is found, AND the boot sector contains binary records, AND one of the binary records specifies an AID of `OCMOS`, attempt to boot based on that record.
 - If no boot attempt has yet been made, then for each attached `filesystem`:
-  - If `OCMOS` exists...
-    - If it is a directory...
-      - If `OCMOS/boot` exists, attempt to boot it.
-      - Otherwise, if the terminal is working, present the user a listing of files in the directory, and give them the option to boot one of the files or to continue searching.
-    - If it is a file, attempt to boot the file.
+  - If `OCMOS/boot` exists, attempt to boot it.
+  - If `OCMOS` exists, attempt to boot it.
 - If no boot attempt has yet been made, inform the user and break to a monitor.
 
 What happens on attempting to boot depends on the first byte of the booted data.
 
-- If the byte is `$3a` (colon), the data is interpreted as Intel HEX data.
 - If the byte is `$53` (capital S), the data is interpreted as Motorola S-records.
 - If it is any other value, the data is interpreted as raw binary data, linearly loaded starting at `$1000`.
 
@@ -286,8 +282,9 @@ Upon entry to your entry point...
 
 - The terminal will be initialized, if possible. If reading `$02FF` returns `$FF`, then the BIOS' attempt to initialize the terminal failed.
 - The terminal size will have been written to `$0B-$0E`, if the terminal is initialized.
-- All installed memory will be linearly mapped starting at `$1000`. (This is the power-on state of the MMU.)
+- Any installed memory will be linearly mapped starting at `$1000`. (This is the power-on state of the MMU.)
 - The UUID of the device that was booted from will be in `$20-$2F`. It is assumed that your code "knows" how it booted.
+- If booted from an unmanaged drive, the first disk drive controller (`$260-$268`) will be set up with that drive. Other disk drives are in an undefined state.
 - All user-facing BIOS control flags are 0.
 
 Interrupts
