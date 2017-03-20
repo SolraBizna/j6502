@@ -51,6 +51,7 @@ public class OCMOS implements Architecture {
 		lastYieldWasSleep = false;
 		mmu.remapMemory();
 		cpu.reset();
+		mmu.reset();
 		return true;
 	}
 

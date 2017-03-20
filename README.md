@@ -30,9 +30,11 @@ To build, you require the following directories:
   The emulator core.
 - `src/name/bizna/ocmos`  
   The OpenComputers architecture module, and the Minecraft mod that enables it.
+- `ocmosbios.cabe` (optional)  
+  The standard OCMOS BIOS, source available [one repo over](https://github.com/SolraBizna/ocmosbios)
 
 Provide your own Forge source, etc. Should build against Minecraft 1.7 and 1.8,
-but is only tested against 1.7.
+but is only tested against 1.7. If you place `ocmosbios.cabe` in `resources/assets/ocmos`, then that BIOS will be available in Creative for your convenience.
 
 Klaus Dormann's 6502 Functional Tests
 =====================================

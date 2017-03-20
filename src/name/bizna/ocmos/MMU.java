@@ -1281,20 +1281,7 @@ public class MMU implements Memory {
 			}
 			else clearFlag(FLAG_LAST_NMI_WAS_USER);
 			break;
-		case 0xfffc: // Reset (let's put our reset logic in here just to be lazy)
-			watchdog = 0;
-			builtInMemory[0] = FLAG_MAPPED_ROM;
-			complexCrashStream = null;
-			debugLineStream = MainClass.instance.shouldAllowDebugDevice() ? new ByteArrayOutputStream() : null;
-			for(byte bank = 0; bank < 16; ++bank) {
-				if(bank != 0) {
-					mmuRegisters[MMU_REG_SUPERVISOR_BANKS_LOW + bank] = bank;
-					mmuRegisters[MMU_REG_SUPERVISOR_BANKS_HIGH + bank] = 0;
-				}
-				mmuRegisters[MMU_REG_USER_BANKS_LOW + bank] = bank;
-				mmuRegisters[MMU_REG_USER_BANKS_HIGH + bank] = 0;
-			}
-			reloadComponentList();
+		case 0xfffc: // Reset
 			break;
 		case 0xfffe: // IRQ/BRK
 			if(getFlag(FLAG_USER_MODE)) {
@@ -1305,6 +1292,22 @@ public class MMU implements Memory {
 			break;
 		}
 		return readByte(addr);
+	}
+
+	public void reset() {
+		watchdog = 0;
+		builtInMemory[0] = FLAG_MAPPED_ROM;
+		complexCrashStream = null;
+		debugLineStream = MainClass.instance.shouldAllowDebugDevice() ? new ByteArrayOutputStream() : null;
+		for(byte bank = 0; bank < 16; ++bank) {
+			if(bank != 0) {
+				mmuRegisters[MMU_REG_SUPERVISOR_BANKS_LOW + bank] = bank;
+				mmuRegisters[MMU_REG_SUPERVISOR_BANKS_HIGH + bank] = 0;
+			}
+			mmuRegisters[MMU_REG_USER_BANKS_LOW + bank] = bank;
+			mmuRegisters[MMU_REG_USER_BANKS_HIGH + bank] = 0;
+		}
+		reloadComponentList();
 	}
 
 	@Override
