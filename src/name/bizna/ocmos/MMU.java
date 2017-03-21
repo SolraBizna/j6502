@@ -1007,7 +1007,8 @@ public class MMU implements Memory {
 		romMappingValid = true;
 		for(int n = 0; n < romArray.length; ++n) romArray[n] = -1;
 		if(addr == null) {
-			// nothing more to do
+			byte[] builtInBIOS = MainClass.instance.getBuiltInBIOS();
+			if(builtInBIOS != null) mapROMImage(builtInBIOS);
 		}
 		else {
 			try {
@@ -1296,6 +1297,10 @@ public class MMU implements Memory {
 
 	public void reset() {
 		watchdog = 0;
+		builtInMemory = new byte[builtInMemory.length];
+		mmuRegisters = new byte[mmuRegisters.length];
+		if(ramArray != null)
+			ramArray = new byte[ramArray.length];
 		builtInMemory[0] = FLAG_MAPPED_ROM;
 		complexCrashStream = null;
 		debugLineStream = MainClass.instance.shouldAllowDebugDevice() ? new ByteArrayOutputStream() : null;

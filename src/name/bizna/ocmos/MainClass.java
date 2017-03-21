@@ -1,7 +1,5 @@
 package name.bizna.ocmos;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
@@ -10,6 +8,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.Mod.Instance;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -17,12 +16,7 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.network.NetworkCheckHandler;
 import cpw.mods.fml.relauncher.Side;
-import li.cil.oc.api.Items;
 import li.cil.oc.api.Machine;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.IResource;
-import net.minecraft.client.resources.IResourceManager;
-import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.common.config.Property;
 
@@ -30,10 +24,12 @@ import net.minecraftforge.common.config.Property;
 public class MainClass {
 	public static final String MODID = "OCMOS";
 	public static final String NAME = "OpenComputers 65C02 (OCMOS)";
-	public static final String VERSION = "0.5";
+	public static final String VERSION = "0.5.1";
 	static Logger logger = LogManager.getFormatterLogger("OCMOS");
 	@Instance(value=MainClass.MODID)
 	public static MainClass instance;
+	@SidedProxy(clientSide="name.bizna.ocmos.ClientProxy", serverSide="name.bizna.ocmos.ServerProxy")
+	public static ServerProxy proxy;
 	private static byte[] defaultBIOSImage;
 	/* Configuration defaults */
 	public static final int defaultBanksPerMebibyte = 32;
@@ -43,7 +39,8 @@ public class MainClass {
 	public static final int[] defaultRamTier3Latency = new int[]{1, 1, 1};
 	public static final int[] defaultRomLatency = new int[]{1, 2, 4};
 	public static final int[] defaultIoLatency = new int[]{1, 2, 4};
-	public static final boolean defaultAllowDebugDevice = false, defaultLogUIFErrors = false, defaultLogInvokes = false;
+	public static final boolean defaultAllowDebugDevice = false, defaultLogUIFErrors = false,
+			defaultLogInvokes = false, defaultBIOSOptional = false;
 	public static final int defaultMaxInvokeSize = 16384;
 	/* and their associated variables */
 	private static int banksPerMebibyte;
@@ -53,7 +50,7 @@ public class MainClass {
 	private static int[] ramTier3Latency;
 	private static int[] romLatency;
 	private static int[] ioLatency;
-	private static boolean allowDebugDevice, logUIFErrors, logInvokes;
+	private static boolean allowDebugDevice, logUIFErrors, logInvokes, biosOptional;
 	private static int maxInvokeSize;
 	/**
 	 * @return The number of cycles that a CPU at a given tier can execute in one Minecraft tick.
@@ -108,6 +105,8 @@ public class MainClass {
 				"Whether to make the debugging device available.\nThis writes to the Minecraft log under computer control; you should\ndisable this unless you're debugging something that you can't debug any\nother way.\nDoes not provide input, only output.\n");
 		logUIFErrors = cfg.getBoolean("logUIFErrors", Configuration.CATEGORY_GENERAL, defaultLogUIFErrors,
 				"Whether to log the reason for rejecting invalid UIF transmissions.\nThis writes to the Minecraft log under (partial) computer control; you\nshould disable this unless you're debugging something that you can't\ndebug any other way.\n");
+		biosOptional = cfg.getBoolean("biosOptional", Configuration.CATEGORY_GENERAL, defaultBIOSOptional,
+				"Whether computers with no EEPROM installed will use the Standard BIOS.\nThis is a pretty cheaty option, but may be necessary, since there is not\ncurrently a crafting recipe for the Standard BIOS.\nIf the Standard BIOS is missing from your jar, this option will have no\neffect.\n");
 		logInvokes = cfg.getBoolean("logInvokes", Configuration.CATEGORY_GENERAL, defaultLogInvokes,
 				"Log ALL invokes, replies, and signals to the Minecraft log!\nYou should pretty seriously consider never enabling this.\n");
 		maxInvokeSize = cfg.getInt("maxInvokeSize", Configuration.CATEGORY_GENERAL, defaultMaxInvokeSize, 128, 1<<30,
@@ -134,7 +133,7 @@ public class MainClass {
 			if(romLatency[n] < 1) romLatency[n] = 1;
 			if(ioLatency[n] < 1) ioLatency[n] = 1;
 		}
-		cfg.getCategory(Configuration.CATEGORY_GENERAL).setPropertyOrder(new ArrayList<String>(Arrays.asList("cpuCyclesPerTick","banksPerMebibyte","romLatency","ramTier1Latency","ramTier2Latency","ramTier3Latency","ioLatency","allowDebugDevice","logUIFErrors","logInvokes","maxInvokeSize")));
+		cfg.getCategory(Configuration.CATEGORY_GENERAL).setPropertyOrder(new ArrayList<String>(Arrays.asList("cpuCyclesPerTick","banksPerMebibyte","romLatency","ramTier1Latency","ramTier2Latency","ramTier3Latency","ioLatency","allowDebugDevice","logUIFErrors","logInvokes","maxInvokeSize","biosOptional")));
 		cfg.save();
 	}
 	@EventHandler
@@ -147,34 +146,7 @@ public class MainClass {
 	}
 	@EventHandler
 	public void postInit(FMLPostInitializationEvent event) {
-		IResourceManager rm = Minecraft.getMinecraft().getResourceManager();
-		try {
-			IResource res = rm.getResource(new ResourceLocation("ocmos", "ocmosbios.cabe"));
-			InputStream stream = res.getInputStream();
-			byte[] buf = new byte[4096];
-			int len = stream.read(buf);
-			if(len <= 6)
-				logger.error("ocmosbios.cabe is too small to possibly be valid");
-			else {
-				defaultBIOSImage = Arrays.copyOf(buf, len);
-				logger.info("Found ocmosbios.cabe");
-			}
-		}
-		catch(IOException e) {
-			logger.error("IOException while loading ocmosbios.cabe", e);
-		}
-		if(defaultBIOSImage != null) {
-			Items.registerEEPROM("EEPROM (OCMOS BIOS)", defaultBIOSImage, null, false);
-			// TODO: Get this to work some day, behind a config option
-			/*
-			ItemStack stack = new ItemStack(Items.get("eeprom").item());
-			NBTTagCompound compound = new NBTTagCompound();
-			compound.setByteArray("oc:eeprom", defaultBIOSImage);
-			compound.setString("oc:label", "EEPROM (OCMOS BIOS)");
-			stack.setTagCompound(compound);
-			GameRegistry.addShapelessRecipe(stack, Items.get("eeprom").item(), net.minecraft.init.Items.feather);
-			*/
-		}
+		proxy.postInit(event);
 	}
 	@NetworkCheckHandler
 	public boolean versionOkay(Map<String,String> mods, Side side) {
@@ -191,5 +163,11 @@ public class MainClass {
 	}
 	int getMaxInvokeSize() {
 		return maxInvokeSize;
+	}
+	byte[] getBuiltInBIOS() {
+		return biosOptional ? defaultBIOSImage : null;
+	}
+	public static void setDefaultBIOSImage(byte[] defaultBIOSImage) {
+		MainClass.defaultBIOSImage = defaultBIOSImage;
 	}
 }
