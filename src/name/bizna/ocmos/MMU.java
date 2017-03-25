@@ -1817,6 +1817,7 @@ public class MMU implements Memory {
 			return ret;
 		}
 		else if(parent.cpu.getState() == State.STOPPED) return new ExecutionResult.Shutdown(false);
+		else if(parent.cpu.getState() == State.AWAITING_INTERRUPT) return new ExecutionResult.Sleep(100000);
 		return null;
 	}
 	
