@@ -14,6 +14,8 @@ import name.bizna.j6502.AbstractCore.State;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 
+@Architecture.Name("OCMOS")
+@Architecture.NoMemoryRequirements
 public class OCMOS implements Architecture {
 	
 	/* maximum number of ticks of clock cycles we can queue to "catch up" */

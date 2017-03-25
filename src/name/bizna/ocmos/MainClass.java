@@ -24,7 +24,7 @@ import net.minecraftforge.common.config.Property;
 public class MainClass {
 	public static final String MODID = "OCMOS";
 	public static final String NAME = "OpenComputers 65C02 (OCMOS)";
-	public static final String VERSION = "0.5.1";
+	public static final String VERSION = "0.5.2";
 	static Logger logger = LogManager.getFormatterLogger("OCMOS");
 	@Instance(value=MainClass.MODID)
 	public static MainClass instance;
