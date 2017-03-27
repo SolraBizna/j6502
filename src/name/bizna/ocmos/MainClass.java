@@ -40,8 +40,9 @@ public class MainClass {
 	public static final int[] defaultRomLatency = new int[]{1, 2, 4};
 	public static final int[] defaultIoLatency = new int[]{1, 2, 4};
 	public static final boolean defaultAllowDebugDevice = false, defaultLogUIFErrors = false,
-			defaultLogInvokes = false, defaultBIOSOptional = false;
+			defaultLogInvokes = false, defaultBIOSOptional = false, defaultLogDeadlineSlippage = false;
 	public static final int defaultMaxInvokeSize = 16384;
+	public static final int defaultDeadlineMilliseconds = 1000;
 	/* and their associated variables */
 	private static int banksPerMebibyte;
 	private static int[] cpuCyclesPerTick;
@@ -50,8 +51,8 @@ public class MainClass {
 	private static int[] ramTier3Latency;
 	private static int[] romLatency;
 	private static int[] ioLatency;
-	private static boolean allowDebugDevice, logUIFErrors, logInvokes, biosOptional;
-	private static int maxInvokeSize;
+	private static boolean allowDebugDevice, logUIFErrors, logInvokes, biosOptional, logDeadlineSlippage;
+	private static int maxInvokeSize, deadlineMilliseconds;
 	/**
 	 * @return The number of cycles that a CPU at a given tier can execute in one Minecraft tick.
 	 */
@@ -109,8 +110,12 @@ public class MainClass {
 				"Whether computers with no EEPROM installed will use the Standard BIOS.\nThis is a pretty cheaty option, but may be necessary, since there is not\ncurrently a crafting recipe for the Standard BIOS.\nIf the Standard BIOS is missing from your jar, this option will have no\neffect.\n");
 		logInvokes = cfg.getBoolean("logInvokes", Configuration.CATEGORY_GENERAL, defaultLogInvokes,
 				"Log ALL invokes, replies, and signals to the Minecraft log!\nYou should pretty seriously consider never enabling this.\n");
+		logDeadlineSlippage = cfg.getBoolean("logDeadlineSlippage", Configuration.CATEGORY_GENERAL, defaultLogDeadlineSlippage,
+				"Log whenever runThreaded terminates due to a missed deadline.\nMainly useful for debugging OCMOS.\n");
 		maxInvokeSize = cfg.getInt("maxInvokeSize", Configuration.CATEGORY_GENERAL, defaultMaxInvokeSize, 128, 1<<30,
 				"The maximum size, in bytes, an outgoing command can take. The higher you\nset this option, the more memory a malicious program can consume.\n");
+		deadlineMilliseconds = cfg.getInt("deadlineMilliseconds", Configuration.CATEGORY_GENERAL, defaultDeadlineMilliseconds, 0, 100000000,
+				"The maximum amount of time that runThreaded can run before giving up on\nmeeting the cycle budget. This option is a workaround for a difficult-\nto-debug hang in the OCMOS MMU, and should also help on overloaded\nservers.\n0 = no deadline\n");
 		banksPerMebibyte = cfg.getInt("banksPerMebibyte", Configuration.CATEGORY_GENERAL, defaultBanksPerMebibyte, 1, 1<<30,
 				"The number of 4096-byte banks a RAM module provides, per mebibyte of\nmemory it would provide a Lua computer.\n65C02 computers require MUCH less memory to perform a task than Lua\ncomputers do. The default attempts to provide a comfortable amount of\nmemory, without making large memory modules pointless.\n");
 		cpuCyclesPerTick = getTierBasedIntList(cfg, "cpuCyclesPerTick", Configuration.CATEGORY_GENERAL, defaultCpuCyclesPerTick,
@@ -133,7 +138,7 @@ public class MainClass {
 			if(romLatency[n] < 1) romLatency[n] = 1;
 			if(ioLatency[n] < 1) ioLatency[n] = 1;
 		}
-		cfg.getCategory(Configuration.CATEGORY_GENERAL).setPropertyOrder(new ArrayList<String>(Arrays.asList("cpuCyclesPerTick","banksPerMebibyte","romLatency","ramTier1Latency","ramTier2Latency","ramTier3Latency","ioLatency","allowDebugDevice","logUIFErrors","logInvokes","maxInvokeSize","biosOptional")));
+		cfg.getCategory(Configuration.CATEGORY_GENERAL).setPropertyOrder(new ArrayList<String>(Arrays.asList("cpuCyclesPerTick","deadlineMilliseconds","logDeadlineSlippage","banksPerMebibyte","romLatency","ramTier1Latency","ramTier2Latency","ramTier3Latency","ioLatency","allowDebugDevice","logUIFErrors","logInvokes","maxInvokeSize","biosOptional")));
 		cfg.save();
 	}
 	@EventHandler
@@ -161,11 +166,17 @@ public class MainClass {
 	boolean shouldLogInvokes() {
 		return logInvokes;
 	}
+	boolean shouldLogDeadlineSlippage() {
+		return logDeadlineSlippage;
+	}
 	int getMaxInvokeSize() {
 		return maxInvokeSize;
 	}
 	byte[] getBuiltInBIOS() {
 		return biosOptional ? defaultBIOSImage : null;
+	}
+	int getDeadlineMilliseconds() {
+		return deadlineMilliseconds;
 	}
 	public static void setDefaultBIOSImage(byte[] defaultBIOSImage) {
 		MainClass.defaultBIOSImage = defaultBIOSImage;

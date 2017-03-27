@@ -89,11 +89,30 @@ public class OCMOS implements Architecture {
 			mmu.allotCycles(cyclesToRun);
 			mmu.countDownWatchdog();
 			mmu.updateIRQ();
+			int deadlineLength = MainClass.instance.getDeadlineMilliseconds();
 			ExecutionResult ret = null;
-			do {
-				mmu.step();
-				ret = mmu.getExecutionResult();
-			} while(ret == null);
+			if(deadlineLength == 0) {
+				do {
+					mmu.step();
+					ret = mmu.getExecutionResult();
+				} while(ret == null);
+			}
+			else {
+				long deadline = deadlineLength == 0 ? Long.MAX_VALUE : System.currentTimeMillis();
+				do {
+					for(int n = 0; n < 10; ++n) {
+						mmu.step();
+						ret = mmu.getExecutionResult();
+						if(ret != null) break;
+					}
+					if(ret == null && System.currentTimeMillis() >= deadline) {
+						if(MainClass.instance.shouldLogDeadlineSlippage())
+							MainClass.logger.warn("Missed deadline! PC=%04X P=%02X A=%02X X=%02X Y=%02X S=%02X",
+									cpu.readPC(), cpu.readP(), cpu.readA(), cpu.readX(), cpu.readY(), cpu.readS());
+						ret = new ExecutionResult.Sleep(0);
+					}
+				} while(ret == null);
+			}
 			lastYieldWasSleep = ret instanceof ExecutionResult.Sleep;
 			return ret;
 		}
