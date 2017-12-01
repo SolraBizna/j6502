@@ -15,7 +15,7 @@ It's pretty much a Java translation of the core of my ET ARS emulator. The cycle
 To embed the emulator into your own project, you need only the classes in the
 `src/name/bizna/j6502` directory.
 
-In spite of the name, this currently only emulates the W65__C__02 (and its static cousin). It the future, it would be easy to generate a non-WDC 65C02 core, an NMOS 6502 core, or even more obscure variants such as a 2A03 core.
+In spite of the name, this currently only emulates the W65**C**02 (and its static cousin). It the future, it would be easy to generate a non-WDC 65C02 core, an NMOS 6502 core, or even more obscure variants such as a 2A03 core.
 
 OCMOS
 =====
