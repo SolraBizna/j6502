@@ -68,7 +68,7 @@ public abstract class AbstractCore {
 	public void step() {
 		if(state == null) throw new RuntimeException("You must call reset() at least once on a Core before you can call step() on it");
 		boolean so = this.so.get();
-		if(so != previousSO) {
+		if(so && !previousSO) {
 			p |= P_V_BIT;
 		}
 		previousSO = so;
