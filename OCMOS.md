@@ -1,13 +1,44 @@
+The OCMOS architecture provides a W65C02S CPU, along with an MMU (for memory protection and management) and some custom IO controllers (for accessing OpenComputers hardware other than memory).
+
+Memory Mapping
+==============
+
+The OCMOS MMU maps all memory in banks, 4K each. Physical bank 0 contains the (tiny) built-in memory, the registers to control the MMU / perform IO, and a lot of reserved space. Physical banks 1 and up contain additional memory from memory modules, if any are installed.
+
+When you perform a memory access to `$xyyy`, `$x` is the logical bank number, and `$yyy` is the address within the bank. To determine which physical bank to read from, the MMU will read the mapping registers, indexed by `$x`:
+
+- If the system is in supervisor mode, it reads the low byte of the bank number from `$20x` and the high byte from `$21x`. The highest three bits of `$21x` are ignored.
+- If the system is in user mode, it reads the low byte of the bank number from `$22x` and the high byte from `$23x`. The highest three bits are the protection mask. (See "Protection Mask")
+
+So, say you're in supervisor mode and you perform a read from `$4E95`. This is in *logical* memory bank `$4`, so the MMU will read `$204` and `$214` to determine which *physical* memory bank to read from. If `$204` contains `$56` and `$214` contains `$04`, then it will read from *physical* bank number `$0456`. One might write out the full *physical* address as `$0456:E95`.
+
+There are two exceptions to the above logic, both of which **only apply in supervisor mode**:
+
+- If bit 0 of the MMU flags register is set, and the access is a read from logical bank `$F`, then this is an EEPROM read. If the access is a write, it's mapped normally regardless of bit 0's flag. This allows a BIOS to write boot code "underneath" the currently-running BIOS without fiddling with memory mapping. It also makes having a BIOS interrupt handler a little simpler.
+- If the access is to logical bank `$0`, then it is *always* an access to physical bank 0. This is to prevent you from accidentally cutting off your own access to the registers, and rendering the computer useless.
+
+As referred to above, physical bank 0 is the built-in memory and registers. Any additional memory modules installed in the computer will provide banks 1 and up, mapped straightforwardly.
+
+Examples:
+
+1. A system with a single 64K memory module installed will have 16 extra banks of memory, numbered 1 through 16.
+2. A system with a 16K memory module and a 4K memory module installed will have 5 extra banks of memory, numbered 1 through 5.
+3. A system with a 64K memory module, a 16K memory module, and a 4K memory module will have 21 extra banks of memory, numbered 1 through 21.
+
+Since supervisor accesses to `$0xxx` always access physical bank 0, that means that the `$200`/`$210` registers are available for another purpose. These are used to communicate how many banks there are. When read, they return the number of extra memory banks that are installed. Since the first extra memory bank is bank 1, this also gives you the largest valid memory bank number.
+
+Memory bank numbers are 13 bits wide, allowing up to 8191 extra banks to exist. This allows you to install just a bit less than 32MiB of physical memory in your system. That may not sound like much, but it's a truly mind-boggling amount of memory from the perspective of an 8-bit system.
+
 Bank 0
 ======
 
-- `$000`: Flags
+- `$000`: MMU Flags
 - `$001,$002,$003,$004`: Forbidden operation information is written here (if you're not making use of User Mode, you can use these as normal)
 - `$001-$1FF`: built-in memory
 - `$200`: (read-only) highest valid memory bank number, low
 - `$201-$20F`: Supervisor memory banks, low
 - `$210`: (read-only) highest valid memory bank number, high
-- `$211-$21F`: Supervisor memory banks, high; top 3 bits are ignored
+- `$211-$21F`: Supervisor memory banks, high; top 3 bits are reserved and should be 0
 - `$220-$22F`: User memory banks, low
 - `$230-$23F`: User memory banks, high; top 3 bits are protection mask
 - `$240`: Signal input (UIF)
@@ -27,8 +58,8 @@ Bank 0
 - `$2FF`: Serial terminal module
 - `$300-$FFF`: Reserved for some kind of standard bus
 
-Flags
------
+MMU Flags (`$000`)
+------------------
 
 - Bit 0 (`$01`): ROM responds to `$Fxxx` Supervisor reads (writes are as normal)
 - Bit 1 (`$02`): User mode is active
@@ -53,8 +84,8 @@ There is a special case; when the instruction after the one that changed the fla
 
 Of course, if you're executing a bank where the user and supervisor mappings are the same, all of this becomes much safer and simpler.
 
-Protection Mask
----------------
+Protection Mask (`$23x`)
+------------------------
 
 - Bit 5 (`$20`): Forbid opcode fetches (effectively also true if bit 7 is set)
 - Bit 6 (`$40`): Forbid writes
@@ -65,7 +96,7 @@ Mapping bank 0 into userspace with a protection mask that allows writing is self
 Forbidden User Operations
 -------------------------
 
-When the CPU is in User mode, and attempts a forbidden operation, an NMI occurs. In such case, flag bit 5 is set, and the PC pushed on the stack is modified to point to the offending instruction.
+When the CPU is in User mode, and attempts a forbidden operation, an NMI occurs. In such case, MMU flag bit 5 is set, and the PC pushed on the stack is modified to point to the offending instruction.
 
 It is always possible to restart the offending instruction, allowing virtualization. This is a LOT of work, though.
 
@@ -87,20 +118,28 @@ Operation types:
 - `$02`: Data write
 - `$03`: Privileged instruction (SEI/WAI/STP)
 
-Watchdog ($241)
----------------
+Watchdog (`$241`)
+-----------------
 
-On reset, the watchdog timer's counter is set to 0, which disables it. When any other value is in the counter, it ticks upward at an inconsistent pace, no faster than Minecraft world ticks. If the counter reaches 255, an NMI occurs.
+On reset, the watchdog timer's counter is set to 0, which disables it. When any other value is in the counter, it ticks upward at an inconsistent pace, no faster than Minecraft world ticks. If the counter reaches 255, an NMI occurs, after which the watchdog is inactive again until reinitialized.
 
-Complex Crash Port ($245)
+This can be used to help prevent some forms of system hang from rendering the system unusable, but bear in mind that if there's not a useful NMI handler mapped, this won't help. Real watchdog timers used in 6502 systems usually reset the system instead of sending an NMI. I think this one sends an NMI so that it can be used to do preemptive scheduling?
+
+Crash Ports (`$244`,`$245`)
+---------------------------
+
+If you encounter an unrecoverable error:
+
+- Write `$00` to `$245`. The error message will be "Crash!"
+- Write any byte `$xx` to `$244`. The error messsage will be "Crash! $xx"
+- Write up to 2048 bytes of UTF-8 text to `$245`, followed by `$00`. The error message will be the text you wrote.
+
+This will cause OpenComputers to shut down the computer, and store the error message for later retrieval by an Analyzer. (It may also display the error on one or more of the attached screens, I don't recall.)
+
+The first two options aren't very user friendly, but they're compact, and most 8-bit computers had similarly unfriendly error messages.
+
+UIF Ports (`$240`,`$242`)
 -------------------------
-
-Write a UTF-8 explanation of the crash to this port. Write a `$00` to terminate the error string. (Errors may not be longer than 2048 bytes.)
-
-If nothing but a single `$00` is written to this port, the computer crashes with the message "Crash!"
-
-UIF Ports ($240,$242)
----------------------
 
 UIF ports are serial buses that transmit data using packed, **big**-endian [OETF #2: Universal Interchange Format](https://oc.cil.li/index.php?/topic/1170-oetf-2-universal-interchange-format/) as the message format.
 
@@ -154,6 +193,8 @@ Components are not listed in any particular order.
 Debug Device (`$247`)
 ---------------------
 
+The Debug Device (which is *not* related to the Debug Card) provides a very low-level way to debug bootloaders and custom BIOSes. It must be enabled in the configuration. It's a bad idea to use this routinely; enable it only in extreme circumstances.
+
 Write bytes to this port to output UTF-8 to the Minecraft game log. On read, returns either `$00` (the port is disabled and writes are ignored) or `$FF` (the port is enabled) depending on the configuration.
 
 Writing `$00` (NUL), `$0A` (CR), or `$0D` (LF) terminate a line. Blank lines are not allowed, and lines longer than 256 characters will be cut off.
@@ -202,7 +243,7 @@ Sector size and number of sectors are configurable on OpenComputers' end. By def
 - Tier 2 hard drive: 4096 sectors
 - Tier 3 hard drive: 8192 sectors
 
-Redstone IO (`$280-$2FF`)
+Redstone IO (`$280-$2F5`)
 -------------------------
 
 The redstone component with the lowest UUID is mapped here.
@@ -217,8 +258,8 @@ The redstone component with the lowest UUID is mapped here.
 
 (To get or set the wireless frequency, you must use the UIF bus.)
 
-Serial Terminal
----------------
+Serial Terminal (`$2FF`)
+------------------------
 
 At power-on, the serial terminal is disabled. Reading from the port will return `$00` if the terminal is currently working, and `$FF` if the terminal is disabled _or_ not present. When it is disabled, writing `$00` to the port attempts to initialize the terminal. (Whether it was successful can be determined by reading the port afterward). Writing anything other than `$00` to the port while the terminal is disabled is undefined, except that writing any value from `$F8` to `$FF` will _always_ do nothing.
 
@@ -245,13 +286,10 @@ Commands:
 
 The response to `$05` will be a `terminal_size` signal, with a `UIFTAG_BYTE_ARRAY` that is at least 4 bytes long. The bytes are: current width, current height, maximum width, maximum height. Software that manages the terminal will generally handle the interrupt and store the bytes somewhere easy to access.
 
-Bank 1+
-=======
-
-Memory, if any is installed.
-
 BIOS
 ====
+
+All of this applies only if the standard OCMOS BIOS is in use. If you provide your own EEPROM, you can rely on everything above (though some things you'll have to initialize yourself) and nothing below.
 
 Booting
 -------
