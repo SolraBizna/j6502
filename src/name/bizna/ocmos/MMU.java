@@ -835,17 +835,14 @@ public class MMU implements Memory {
 			if(charToOutput != null) {
 				if(!didOutputChar) {
 					simpleVoidCall(mappedGPU, "set", cursorX, cursorY, charToOutput);
-					didOutputChar = true;
+					didOutputChar = true; // Still set to false by line 846 anyway?
 				}
 				// TODO: character width, sigh
-				int newCursorX = cursorX + 1;
-				if(newCursorX > (curW&0xFF)) {
-					if(autoLinebreak) {
-						newCursorX = 0;
-						linefeed();
-					}
+				cursorX++;
+				if(cursorX + 1 > (curW&0xFF) && autoLinebreak) {
+					cursorX = 0;
+					linefeed();
 				}
-				cursorX = newCursorX;
 				didOutputChar = false;
 				codeUnitPos = 0;
 			}
